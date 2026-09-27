@@ -1,0 +1,2 @@
+[console_scripts]
+benchmark = local_swe_benchmark.cli:main

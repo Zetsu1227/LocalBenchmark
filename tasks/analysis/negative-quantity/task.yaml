@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "analysis-negative-quantity-001",
+  "version": 1,
+  "category": "analysis",
+  "language": "python",
+  "repository": {
+    "path": "../../../.benchmark_cache/order_service",
+    "bundle": "../../../repositories/order_service.bundle",
+    "base_commit": "616c169ca2a07cdb86813ee2303c333f3f5d7bbb"
+  },
+  "task": {
+    "description": "Investigate the order pricing implementation. A malformed cart item can cause a nonsensical order total. Explain the root cause, identify the affected file and function, describe the observable impact, and recommend a minimal correction. Do not modify the repository; report your findings and reasoning.",
+    "acceptance_criteria": [
+      "Identifies that negative quantity values are accepted.",
+      "Locates the unchecked multiplication in calculate_total.",
+      "Explains that the accepted value can reduce or negate the total."
+    ]
+  },
+  "build": {"command": ["python", "-m", "compileall", "-q", "src"]},
+  "tests": {"public_command": ["python", "-m", "unittest", "discover", "-s", "tests"]},
+  "evaluation": {
+    "analysis_rubric": {
+      "required_terms": ["negative", "quantity", "calculate_total", "total"],
+      "required_paths": ["pricing.py"]
+    }
+  },
+  "limits": {"timeout_seconds": 900, "max_iterations": 30, "max_tool_calls": 100, "max_tokens": 32768, "allowed_commands": ["python", "git"]}
+}

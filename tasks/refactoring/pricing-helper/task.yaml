@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "refactoring-pricing-001",
+  "version": 1,
+  "category": "refactoring",
+  "language": "python",
+  "repository": {
+    "path": "../../../.benchmark_cache/order_service",
+    "bundle": "../../../repositories/order_service.bundle",
+    "base_commit": "616c169ca2a07cdb86813ee2303c333f3f5d7bbb"
+  },
+  "task": {
+    "description": "Refactor the pricing module to extract per-item arithmetic into a `calculate_line_total(item)` helper in `pricing.py`, and make `calculate_total` use that helper. The helper should return the unrounded line extension so rounding remains once at the aggregate total. Preserve the existing public API and behavior for empty carts, fractional prices, and multiple items. Inspect the repository, implement the refactor, and run the existing tests.",
+    "acceptance_criteria": [
+      "calculate_line_total accepts one item and returns unit_price times quantity.",
+      "calculate_total delegates each line to calculate_line_total.",
+      "The aggregate is still rounded to two decimal places exactly once.",
+      "Existing checkout behavior remains intact."
+    ]
+  },
+  "build": {"command": ["python", "-m", "compileall", "-q", "src"]},
+  "tests": {
+    "public_command": ["python", "-m", "unittest", "discover", "-s", "tests"],
+    "hidden_command": ["python", "-m", "unittest", "discover", "-s", ".benchmark_hidden"],
+    "hidden_files": [
+      {"source": "hidden/test_pricing_helper.py", "destination": ".benchmark_hidden/test_pricing_helper.py"}
+    ]
+  },
+  "limits": {"timeout_seconds": 900, "max_iterations": 30, "max_tool_calls": 100, "max_tokens": 32768, "allowed_commands": ["python", "git"]}
+}

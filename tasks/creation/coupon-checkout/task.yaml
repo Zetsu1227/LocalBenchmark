@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "id": "creation-coupon-001",
+  "version": 1,
+  "category": "creation",
+  "language": "python",
+  "repository": {
+    "path": "../../../.benchmark_cache/order_service",
+    "bundle": "../../../repositories/order_service.bundle",
+    "base_commit": "616c169ca2a07cdb86813ee2303c333f3f5d7bbb"
+  },
+  "task": {
+    "description": "Add coupon support to the checkout flow. `CheckoutService.total` should accept an optional percentage discount (0 through 100, default 0) and return the rounded discounted total. Preserve existing callers and `calculate_total` behavior. Reject discounts outside the supported range with `ValueError`. Inspect the repository, implement the feature, run the public tests, and add/execute tests for the new behavior if useful.",
+    "acceptance_criteria": [
+      "Existing checkout calls without a discount keep their current result.",
+      "A 20 percent discount on a total of 100 returns 80.",
+      "Zero and 100 percent discounts are supported.",
+      "Discounts below 0 or above 100 raise ValueError."
+    ]
+  },
+  "build": {"command": ["python", "-m", "compileall", "-q", "src"]},
+  "tests": {
+    "public_command": ["python", "-m", "unittest", "discover", "-s", "tests"],
+    "hidden_command": ["python", "-m", "unittest", "discover", "-s", ".benchmark_hidden"],
+    "hidden_files": [
+      {"source": "hidden/test_coupon_acceptance.py", "destination": ".benchmark_hidden/test_coupon_acceptance.py"}
+    ]
+  },
+  "limits": {
+    "timeout_seconds": 900,
+    "max_iterations": 30,
+    "max_tool_calls": 100,
+    "max_tokens": 32768,
+    "allowed_commands": ["python", "git"]
+  }
+}

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-swe-benchmark"
+version = "0.1.0"
+description = "Reproducible local benchmark for repository-level SWE agents"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=6.0"]
+
+[project.scripts]
+benchmark = "local_swe_benchmark.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["local_swe_benchmark*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

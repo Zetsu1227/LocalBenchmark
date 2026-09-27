@@ -1,0 +1,101 @@
+# Local SWE Benchmark
+
+Framework experimental para comparar LLMs locais como agentes de engenharia
+de software, com foco em tarefas de repositório, ferramentas, testes, isolamento
+por repetição e dados auditáveis.
+
+## Estado
+
+O projeto começa pela infraestrutura e pelos protocolos. A arquitetura,
+curadoria, schemas e ameaças à validade estão em
+[docs/architecture.md](docs/architecture.md) e
+[docs/methodology.md](docs/methodology.md). A validação com dois modelos depende
+de modelos carregados em um servidor LM Studio; não é presumida por esta entrega.
+
+## Instalação
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+```
+
+O núcleo não depende de pacotes externos: os arquivos `.yaml` incluídos usam
+JSON, que também é YAML válido. Para escrever YAML idiomático, instale o extra
+opcional `python -m pip install -e ".[yaml]"`.
+
+Configure um perfil em `configs/models.yaml`, sem alterar o código:
+
+```yaml
+models:
+  qwen-local:
+    provider: lmstudio
+    base_url: http://localhost:1234/v1
+    model: qwen3.5-9b
+    quantization: Q6_K
+    context_length: 32768
+    temperature: 0.2
+    top_p: 1.0
+    seed: 42
+```
+
+Inicie o servidor no LM Studio e execute:
+
+```powershell
+benchmark tasks list
+benchmark run --model qwen3.5-9b-q6 --task creation-coupon-001 --runs 5
+benchmark report --input results --format json
+```
+
+O `--model` seleciona uma chave de perfil, não fixa nomes de modelos no
+programa. Um perfil representa uma configuração experimental; mudar modelo,
+quantização ou contexto gera outra identidade de experimento.
+
+Cada execução também gera automaticamente relatórios HTML e JSON em
+`reports/<perfil-do-modelo>/<task_id>/<run_id>.html` e `.json`. Os arquivos
+`summary.html` e `summary.json` nessa pasta agregam as repetições daquela tarefa
+e identidade de experimento (incluindo os controles da configuração). Para mudar
+a pasta de relatórios, use `benchmark run --reports <pasta>`.
+O comando imprime os caminhos dos relatórios após cada execução.
+
+## Repositórios e tarefas
+
+Cada `task.yaml` declara versão/categoria, descrição, caminho e commit do
+repositório, comandos públicos/ocultos e limites. O commit tem de existir e ser
+imutável. Cada run usa `git worktree` destacado. O agente recebe descrição,
+system prompt e schemas de ferramenta; soluções de referência não são fornecidas.
+
+```text
+configs/                 perfis de modelo e configuração
+local_swe_benchmark/     agentes, providers, tools, runner e reporting
+tasks/{creation,refactoring,analysis}/<task>/task.yaml
+repositories/            projetos Git avaliados
+results/<run_id>/        JSON, JSONL, patch e saída da avaliação
+reports/<perfil>/<task>/ relatório individual por run e resumo das repetições
+docs/                    protocolo, schemas e ameaças à validade
+tests/                   testes do framework
+```
+
+Hidden tests ficam fora do worktree do agente e só são copiados para um workspace
+de avaliação separado depois que ele termina. A ferramenta não os expõe, mas
+comandos executados no host podem ler diretórios superiores; o uso de worktree
+não é uma fronteira de segurança. Para ocultação forte ou código não confiável,
+execute o worker em container/sandbox descartável, montando somente o repositório,
+e não disponibilize segredos.
+
+## Dados e limitações
+
+`run.json` é o registro por repetição e `events.jsonl` preserva a trajetória.
+Campos de telemetria indisponíveis ficam `null`. O cliente coleta TTFT e tempo
+de geração localmente e usa tokens informados pela API quando disponíveis; não
+trata limite configurado como contexto efetivamente utilizado. Consulte
+[schema e protocolo](docs/architecture.md) e [metodologia](docs/methodology.md).
+
+## Desenvolvimento
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+Veja [docs/methodology.md](docs/methodology.md) para referências acadêmicas e
+ameaças à validade. Resultados brutos devem acompanhar qualquer agregação.
