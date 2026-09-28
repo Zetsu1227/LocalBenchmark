@@ -1,101 +1,209 @@
 # Local SWE Benchmark
 
-Framework experimental para comparar LLMs locais como agentes de engenharia
-de software, com foco em tarefas de repositório, ferramentas, testes, isolamento
-por repetição e dados auditáveis.
+Framework experimental para comparar LLMs locais como agentes de engenharia de
+software. O agente navega por um repositório, usa ferramentas, executa comandos
+e testes, e é avaliado por critérios automatizados.
 
-## Estado
+## Requisitos
 
-O projeto começa pela infraestrutura e pelos protocolos. A arquitetura,
-curadoria, schemas e ameaças à validade estão em
-[docs/architecture.md](docs/architecture.md) e
-[docs/methodology.md](docs/methodology.md). A validação com dois modelos depende
-de modelos carregados em um servidor LM Studio; não é presumida por esta entrega.
+- Windows com PowerShell (os exemplos abaixo usam PowerShell).
+- Python 3.11 ou superior.
+- Git disponível no `PATH`.
+- LM Studio com um modelo carregado e o servidor local iniciado para executar
+  tarefas com o provider `lmstudio`.
+
+Execute os comandos a partir da pasta raiz do projeto. O CLI resolve caminhos
+relativos a partir do diretório atual.
 
 ## Instalação
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-O núcleo não depende de pacotes externos: os arquivos `.yaml` incluídos usam
-JSON, que também é YAML válido. Para escrever YAML idiomático, instale o extra
-opcional `python -m pip install -e ".[yaml]"`.
+O runtime usa somente a biblioteca padrão do Python. Os arquivos de exemplo
+estão em sintaxe JSON, válida como YAML. Para ler ou criar arquivos YAML
+idiomáticos, instale o suporte opcional:
 
-Configure um perfil em `configs/models.yaml`, sem alterar o código:
-
-```yaml
-models:
-  qwen-local:
-    provider: lmstudio
-    base_url: http://localhost:1234/v1
-    model: qwen3.5-9b
-    quantization: Q6_K
-    context_length: 32768
-    temperature: 0.2
-    top_p: 1.0
-    seed: 42
+```powershell
+python -m pip install -e ".[yaml]"
 ```
 
-Inicie o servidor no LM Studio e execute:
+Se o PowerShell bloquear a ativação do ambiente, use o executável diretamente
+(`.\.venv\Scripts\benchmark.exe`) ou ajuste a política de execução da sessão
+conforme as regras da sua máquina.
+
+## Configurar o LM Studio e os modelos
+
+1. No LM Studio, carregue o modelo desejado e inicie o servidor local com a API
+   OpenAI-compatible disponível (por padrão, `http://localhost:1234/v1`).
+2. Edite `configs/models.yaml` e adicione ou ajuste uma entrada sob `models`.
+   A chave, por exemplo `qwen3.5-9b-q6`, é o nome de perfil usado no CLI; o campo
+   `model` deve corresponder ao modelo servido pelo LM Studio.
+3. Registre a quantização, contexto e parâmetros experimentais no perfil. O
+   contexto configurado não representa o contexto efetivamente utilizado.
+
+Perfis de exemplo incluídos: `qwen3.5-9b-q6`, `qwen3.5-9b-q4-k-m`, `qwen3-8b`
+e `qwen2.5-coder-7b`. Confirme que o identificador do modelo no perfil
+corresponde ao modelo carregado no servidor.
+
+## Comandos do benchmark
+
+### Ajuda
+
+```powershell
+benchmark --help
+benchmark tasks --help
+benchmark run --help
+benchmark report --help
+```
+
+Se não ativou `.venv`, use `python -m pip install -e .` e chame
+`.\.venv\Scripts\benchmark.exe` no lugar de `benchmark`.
+
+### Listar tarefas
 
 ```powershell
 benchmark tasks list
-benchmark run --model qwen3.5-9b-q6 --task creation-coupon-001 --runs 5
-benchmark report --input results --format json
 ```
 
-O `--model` seleciona uma chave de perfil, não fixa nomes de modelos no
-programa. Um perfil representa uma configuração experimental; mudar modelo,
-quantização ou contexto gera outra identidade de experimento.
+O comando exibe o ID, categoria e arquivo de definição das tarefas encontradas
+em `tasks/`. Os IDs atuais incluem:
 
-Cada execução também gera automaticamente relatórios HTML e JSON em
-`reports/<perfil-do-modelo>/<task_id>/<run_id>.html` e `.json`. Os arquivos
-`summary.html` e `summary.json` nessa pasta agregam as repetições daquela tarefa
-e identidade de experimento (incluindo os controles da configuração). Para mudar
-a pasta de relatórios, use `benchmark run --reports <pasta>`.
-O comando imprime os caminhos dos relatórios após cada execução.
+| ID | Categoria | Objetivo |
+| --- | --- | --- |
+| `creation-coupon-001` | creation | Implementar o comportamento de cupons no checkout |
+| `refactoring-pricing-001` | refactoring | Extrair o cálculo de cada item para um helper, preservando comportamento |
+| `analysis-negative-quantity-001` | analysis | Investigar e explicar o cálculo incorreto para quantidades negativas, sem alterar o código |
 
-## Repositórios e tarefas
+Use `benchmark tasks list` para confirmar os IDs disponíveis na versão local do
+dataset.
 
-Cada `task.yaml` declara versão/categoria, descrição, caminho e commit do
-repositório, comandos públicos/ocultos e limites. O commit tem de existir e ser
-imutável. Cada run usa `git worktree` destacado. O agente recebe descrição,
-system prompt e schemas de ferramenta; soluções de referência não são fornecidas.
+### Executar tarefas
+
+Uma execução única:
+
+```powershell
+benchmark run --model qwen3.5-9b-q6 --task creation-coupon-001
+```
+
+Repetir uma tarefa cinco vezes:
+
+```powershell
+benchmark run --model qwen3.5-9b-q6 --task creation-coupon-001 --runs 5
+```
+
+Executar todas as tarefas de uma categoria:
+
+```powershell
+benchmark run --model qwen3.5-9b-q6 --category refactoring --runs 3
+```
+
+Executar todas as tarefas encontradas:
+
+```powershell
+benchmark run --model qwen3.5-9b-q6 --runs 1
+```
+
+Troque o valor de `--model` por uma chave existente em `configs/models.yaml`.
+Para comparar outro modelo ou quantização, configure outro perfil e execute-o
+separadamente. Temperatura, `top_p`, seed e contexto são controlados pelo perfil;
+uma mudança neles define outra configuração experimental.
+
+Opções disponíveis para `benchmark run`:
+
+| Opção | Descrição |
+| --- | --- |
+| `--model` | Obrigatória; chave do perfil em `configs/models.yaml` |
+| `--task` | Executa somente o ID de tarefa informado |
+| `--category` | Filtra por `creation`, `refactoring` ou `analysis` |
+| `--runs` | Número de repetições independentes; padrão `1` |
+| `--tasks-dir` | Catálogo de tarefas; padrão `tasks` |
+| `--models-config` | Arquivo de perfis; padrão `configs/models.yaml` |
+| `--results` | Diretório de resultados brutos; padrão `results` |
+| `--reports` | Diretório de reports por modelo/tarefa; padrão `reports` |
+
+Cada tentativa recebe um `run_id` próprio e começa no commit fixado da tarefa,
+em um Git worktree novo. O agente recebe a descrição da tarefa e as ferramentas,
+não uma solução de referência. Não execute várias tarefas concorrentes contra o
+mesmo servidor LM Studio, a menos que concorrência faça parte do experimento.
+
+### Reports e exportação
+
+Ao terminar cada tentativa, o comando `run` grava um JSON e um HTML individuais e
+atualiza o resumo agregado em:
 
 ```text
-configs/                 perfis de modelo e configuração
-local_swe_benchmark/     agentes, providers, tools, runner e reporting
-tasks/{creation,refactoring,analysis}/<task>/task.yaml
-repositories/            projetos Git avaliados
-results/<run_id>/        JSON, JSONL, patch e saída da avaliação
-reports/<perfil>/<task>/ relatório individual por run e resumo das repetições
-docs/                    protocolo, schemas e ameaças à validade
-tests/                   testes do framework
+reports/<perfil-do-modelo>/<task_id>/<run_id>.json
+reports/<perfil-do-modelo>/<task_id>/<run_id>.html
+reports/<perfil-do-modelo>/<task_id>/summary.json
+reports/<perfil-do-modelo>/<task_id>/summary.html
 ```
 
-Hidden tests ficam fora do worktree do agente e só são copiados para um workspace
-de avaliação separado depois que ele termina. A ferramenta não os expõe, mas
-comandos executados no host podem ler diretórios superiores; o uso de worktree
-não é uma fronteira de segurança. Para ocultação forte ou código não confiável,
-execute o worker em container/sandbox descartável, montando somente o repositório,
-e não disponibilize segredos.
+Abra o HTML no navegador ou leia o JSON com PowerShell:
 
-## Dados e limitações
+```powershell
+Invoke-Item .\reports\qwen3.5-9b-q6\creation-coupon-001\summary.html
+Get-Content .\reports\qwen3.5-9b-q6\creation-coupon-001\summary.json
+```
 
-`run.json` é o registro por repetição e `events.jsonl` preserva a trajetória.
-Campos de telemetria indisponíveis ficam `null`. O cliente coleta TTFT e tempo
-de geração localmente e usa tokens informados pela API quando disponíveis; não
-trata limite configurado como contexto efetivamente utilizado. Consulte
-[schema e protocolo](docs/architecture.md) e [metodologia](docs/methodology.md).
+O resumo agrupa as repetições da mesma tarefa e configuração experimental. Use
+o arquivo com `run_id` para examinar uma tentativa específica. O report inclui
+sucesso, avaliação, duração, chamadas e iterações do agente, métricas de tokens
+disponíveis, classificação de falhas e caminhos dos artefatos.
+
+Para exportar resultados brutos já salvos em `results/`:
+
+```powershell
+benchmark report --input results --format json
+benchmark report --input results --format csv
+benchmark report --input results --format html
+```
+
+O caminho padrão de saída é `reports/report.<formato>`. Para escolher outro
+caminho, informe `--output`:
+
+```powershell
+benchmark report --input results --format csv --output reports\comparacao.csv
+```
+
+Opções de `benchmark report`: `--input` escolhe a pasta que contém execuções
+(padrão `results`), `--format` aceita `json`, `csv` ou `html` (padrão `json`) e
+`--output` define o arquivo de saída.
+
+### Arquivos de uma execução
+
+```text
+results/<run_id>/run.json       registro de métricas, controles e avaliação
+results/<run_id>/events.jsonl  chamadas/respostas e eventos da trajetória
+results/<run_id>/patch.diff    patch produzido pelo agente
+results/<run_id>/...           saídas e logs dos comandos de avaliação
+```
+
+`run.json` é o resultado estruturado da tentativa; `final_response.txt`, quando
+presente, contém a resposta final textual do agente. Relatórios agregados não
+substituem esses dados brutos. Campos de telemetria indisponíveis ficam `null`.
 
 ## Desenvolvimento
+
+Instale o projeto em modo editável (consulte [Instalação](#instalação)) e rode a
+suíte de testes:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-Veja [docs/methodology.md](docs/methodology.md) para referências acadêmicas e
-ameaças à validade. Resultados brutos devem acompanhar qualquer agregação.
+## Arquitetura, protocolo e limitações
+
+- [Arquitetura e schemas](docs/architecture.md)
+- [Metodologia e ameaças à validade](docs/methodology.md)
+
+As tarefas devem fixar commits imutáveis. O agente trabalha em worktree
+descartável; hidden tests são copiados apenas para um workspace de avaliação
+separado após o término do agente. Worktrees isolam estado Git, mas não são uma
+fronteira de segurança para comandos do sistema: para código não confiável, use
+um container ou sandbox descartável sem segredos e com acesso limitado ao
+repositório.
