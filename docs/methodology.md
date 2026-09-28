@@ -57,9 +57,11 @@ For LM Studio, the provider applies the profile's configured context at model
 load time through the native model-management API and records the context
 confirmed by the server. If an instance of the selected model is already loaded
 with a different context, that instance is unloaded and reloaded before the
-trial. The OpenAI-compatible chat-completions endpoint itself does not set the
-model's context length. `loaded_context` is model capacity; it must not be
-confused with observed `peak_context`/prompt usage.
+trial. The LM Studio backend may round the request upward to a 512-token
+boundary; `configured_context` and `loaded_context` preserve both values. The
+OpenAI-compatible chat-completions endpoint itself does not set the model's
+context length. `loaded_context` is model capacity; it must not be confused
+with observed `peak_context`/prompt usage.
 
 For stochastic models, use repeated independent trials. Report raw runs,
 success rate with a binomial confidence interval, and descriptive statistics

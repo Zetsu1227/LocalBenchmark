@@ -68,7 +68,14 @@ class LMStudioProvider:
         if isinstance(context_length, bool) or not isinstance(context_length, int) or context_length < 1:
             raise ValueError("context_length must be a positive integer")
 
-        inventory = self._management_request("GET", "/api/v1/models", timeout_seconds)
+        # LM Studio's llama.cpp backend may normalize requests to a context
+        # allocation boundary. For example, 50,000 can be reported as 50,176,
+        # the next 512-token boundary. Preserve that effective value in results.
+        normalized_context = ((context_length + 511) // 512) * 512
+        accepted_contexts = {context_length, normalized_context}
+
+        inventory = self._management_request(
+            "GET", "/api/v1/models", timeout_seconds=timeout_seconds)
         models = inventory.get("models")
         if not isinstance(models, list):
             raise ProviderError("LM Studio model list did not contain a models array", "model_error")
@@ -81,9 +88,9 @@ class LMStudioProvider:
 
         for instance in loaded_instances:
             config = instance.get("config") or {}
-            if config.get("context_length") == context_length:
+            if config.get("context_length") in accepted_contexts:
                 self.model = instance["id"]
-                return {"instance_id": self.model, "context_length": context_length,
+                return {"instance_id": self.model, "context_length": config["context_length"],
                         "load_time_seconds": None, "reused": True}
 
         # Existing instances of this exact model may have been loaded by the UI
@@ -103,10 +110,11 @@ class LMStudioProvider:
         loaded_context = (loaded.get("load_config") or {}).get("context_length")
         if loaded.get("status") != "loaded" or not instance_id:
             raise ProviderError(f"LM Studio did not confirm model loading: {loaded}", "model_error")
-        if loaded_context != context_length:
+        if loaded_context not in accepted_contexts:
             raise ProviderError(
-                f"LM Studio loaded context_length={loaded_context!r}, "
-                f"but the profile requested {context_length}", "context_error")
+                f"LM Studio loaded context_length={loaded_context!r}; "
+                f"the profile requested {context_length} (accepted effective value: "
+                f"{normalized_context})", "context_error")
         self.model = instance_id
         return {"instance_id": instance_id, "context_length": loaded_context,
                 "load_time_seconds": loaded.get("load_time_seconds"), "reused": False}

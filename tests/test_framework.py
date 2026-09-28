@@ -270,7 +270,7 @@ def calculate_total(items: list[dict[str, int | float]]) -> float:
             JsonResponse({"models": [{"key": "test-model", "loaded_instances": []}]}),
             JsonResponse({"status": "loaded", "instance_id": "test-model-instance",
                           "load_time_seconds": 2.5,
-                          "load_config": {"context_length": 50000}}),
+                          "load_config": {"context_length": 50176}}),
         ]
         provider = LMStudioProvider("http://localhost:1234/v1", "test-model")
         with patch("local_swe_benchmark.providers.lmstudio.urllib.request.urlopen",
@@ -278,13 +278,15 @@ def calculate_total(items: list[dict[str, int | float]]) -> float:
             loaded = provider.ensure_model_loaded(50000)
 
         self.assertEqual(urlopen.call_count, 2)
-        self.assertEqual(urlopen.call_args_list[0].args[0].full_url,
-                         "http://localhost:1234/api/v1/models")
+        inventory_request = urlopen.call_args_list[0].args[0]
+        self.assertEqual(inventory_request.full_url, "http://localhost:1234/api/v1/models")
+        self.assertEqual(inventory_request.method, "GET")
+        self.assertIsNone(inventory_request.data)
         load_request = urlopen.call_args_list[1].args[0]
         self.assertEqual(load_request.full_url, "http://localhost:1234/api/v1/models/load")
         self.assertEqual(json.loads(load_request.data), {
             "model": "test-model", "context_length": 50000, "echo_load_config": True})
-        self.assertEqual(loaded["context_length"], 50000)
+        self.assertEqual(loaded["context_length"], 50176)
         self.assertEqual(provider.model, "test-model-instance")
 
     def test_lmstudio_reloads_model_when_existing_context_differs(self):
@@ -307,7 +309,7 @@ def calculate_total(items: list[dict[str, int | float]]) -> float:
             JsonResponse({"instance_id": "test-model-old"}),
             JsonResponse({"status": "loaded", "instance_id": "test-model-new",
                           "load_time_seconds": 1.0,
-                          "load_config": {"context_length": 50000}}),
+                          "load_config": {"context_length": 50176}}),
         ]
         provider = LMStudioProvider("http://localhost:1234/v1", "test-model")
         with patch("local_swe_benchmark.providers.lmstudio.urllib.request.urlopen",
@@ -318,7 +320,28 @@ def calculate_total(items: list[dict[str, int | float]]) -> float:
         self.assertEqual(unload_request.full_url, "http://localhost:1234/api/v1/models/unload")
         self.assertEqual(json.loads(unload_request.data), {"instance_id": "test-model-old"})
         self.assertEqual(loaded["instance_id"], "test-model-new")
-        self.assertEqual(loaded["context_length"], 50000)
+        self.assertEqual(loaded["context_length"], 50176)
+
+    def test_lmstudio_reuses_context_rounded_up_to_next_512_tokens(self):
+        class JsonResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps({"models": [{"key": "test-model", "loaded_instances": [
+                    {"id": "test-model-instance", "config": {"context_length": 50176}}]}]}).encode()
+
+        provider = LMStudioProvider("http://localhost:1234/v1", "test-model")
+        with patch("local_swe_benchmark.providers.lmstudio.urllib.request.urlopen",
+                   return_value=JsonResponse()) as urlopen:
+            loaded = provider.ensure_model_loaded(50000)
+
+        urlopen.assert_called_once()
+        self.assertEqual(loaded["context_length"], 50176)
+        self.assertTrue(loaded["reused"])
 
 
 if __name__ == "__main__":

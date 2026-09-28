@@ -53,10 +53,12 @@ Ao iniciar uma execução, o benchmark consulta os modelos carregados e usa a AP
 nativa do LM Studio para carregar o modelo do perfil com o `context_length`
 definido. Se já houver uma instância daquele mesmo modelo com outro contexto, o
 benchmark a descarrega e carrega novamente com o valor do perfil. Outras
-instâncias/modelos não são descarregados. A carga só é considerada válida se o
-LM Studio confirmar o contexto pedido; a instância, o contexto confirmado e o
-tempo de carga aparecem em `run.json` e no report. Essa função requer a API
-nativa disponível no LM Studio 0.4.0 ou superior.
+instâncias/modelos não são descarregados. O LM Studio pode arredondar o valor
+para cima até o próximo bloco de 512 tokens (por exemplo, `50000` pode resultar
+em `50176`); o benchmark registra o valor efetivamente confirmado em
+`loaded_context`, separado de `configured_context`. A instância, o contexto
+confirmado e o tempo de carga aparecem em `run.json` e no report. Essa função
+requer a API nativa disponível no LM Studio 0.4.0 ou superior.
 
 O valor do perfil define a capacidade de contexto carregada, não quantos tokens
 a conversa consumirá. A conversa pode usar menos tokens; `peak_context` e os
