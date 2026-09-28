@@ -9,8 +9,11 @@ e testes, e é avaliado por critérios automatizados.
 - Windows com PowerShell (os exemplos abaixo usam PowerShell).
 - Python 3.11 ou superior.
 - Git disponível no `PATH`.
-- LM Studio com um modelo carregado e o servidor local iniciado para executar
-  tarefas com o provider `lmstudio`.
+- LM Studio 0.4.0 ou superior, com o servidor local iniciado e o modelo do perfil
+  disponível para executar tarefas com o provider `lmstudio`. A integração usa a
+  [API nativa de load](https://lmstudio.ai/docs/developer/rest/load) para aplicar
+  o contexto e a [API OpenAI-compatible](https://lmstudio.ai/docs/developer/openai-compat)
+  para inferência com ferramentas.
 
 Execute os comandos a partir da pasta raiz do projeto. O CLI resolve caminhos
 relativos a partir do diretório atual.
@@ -38,13 +41,27 @@ conforme as regras da sua máquina.
 
 ## Configurar o LM Studio e os modelos
 
-1. No LM Studio, carregue o modelo desejado e inicie o servidor local com a API
+1. No LM Studio, disponibilize/baixe o modelo desejado e inicie o servidor local com a API
    OpenAI-compatible disponível (por padrão, `http://localhost:1234/v1`).
 2. Edite `configs/models.yaml` e adicione ou ajuste uma entrada sob `models`.
    A chave, por exemplo `qwen3.5-9b-q6`, é o nome de perfil usado no CLI; o campo
    `model` deve corresponder ao modelo servido pelo LM Studio.
 3. Registre a quantização, contexto e parâmetros experimentais no perfil. O
    contexto configurado não representa o contexto efetivamente utilizado.
+
+Ao iniciar uma execução, o benchmark consulta os modelos carregados e usa a API
+nativa do LM Studio para carregar o modelo do perfil com o `context_length`
+definido. Se já houver uma instância daquele mesmo modelo com outro contexto, o
+benchmark a descarrega e carrega novamente com o valor do perfil. Outras
+instâncias/modelos não são descarregados. A carga só é considerada válida se o
+LM Studio confirmar o contexto pedido; a instância, o contexto confirmado e o
+tempo de carga aparecem em `run.json` e no report. Essa função requer a API
+nativa disponível no LM Studio 0.4.0 ou superior.
+
+O valor do perfil define a capacidade de contexto carregada, não quantos tokens
+a conversa consumirá. A conversa pode usar menos tokens; `peak_context` e os
+campos relacionados registram o uso observado quando o servidor fornece essa
+telemetria.
 
 Perfis de exemplo incluídos: `qwen3.5-9b-q6`, `qwen3.5-9b-q4-k-m`, `qwen3-8b`
 e `qwen2.5-coder-7b`. Confirme que o identificador do modelo no perfil

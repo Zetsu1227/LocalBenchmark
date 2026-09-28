@@ -53,6 +53,14 @@ recorded for every run. Any intentional change to a controlled variable
 defines a different experiment configuration. Run order should be randomized
 or interleaved to reduce thermal, cache, and background-load effects.
 
+For LM Studio, the provider applies the profile's configured context at model
+load time through the native model-management API and records the context
+confirmed by the server. If an instance of the selected model is already loaded
+with a different context, that instance is unloaded and reloaded before the
+trial. The OpenAI-compatible chat-completions endpoint itself does not set the
+model's context length. `loaded_context` is model capacity; it must not be
+confused with observed `peak_context`/prompt usage.
+
 For stochastic models, use repeated independent trials. Report raw runs,
 success rate with a binomial confidence interval, and descriptive statistics
 (mean, median, standard deviation, min/max, and requested percentiles) for
@@ -94,8 +102,8 @@ credentials. Keep unmodified raw JSONL so reports can be regenerated.
 * **Prompt and scaffold effects:** tool descriptions, loop policy, context
   compaction, and error formatting affect outcomes. Freeze and hash them.
 * **Context measurement:** OpenAI-compatible endpoints may omit usage or
-  performance fields. Missing telemetry must remain missing; context limit is
-  not actual context use.
+  performance fields. Missing telemetry must remain missing; loaded context
+  capacity is not actual context use.
 * **Hardware and thermal state:** GPU/CPU/RAM, drivers, offload, concurrent
   workloads, temperature, and power settings affect throughput. Record host
   configuration and interleave runs.

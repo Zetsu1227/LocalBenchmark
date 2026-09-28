@@ -20,6 +20,97 @@ class LMStudioProvider:
         self.model = model
         self.api_key = api_key
 
+    @property
+    def management_base_url(self) -> str:
+        """Return the LM Studio server root for its native model-management API."""
+        if self.base_url.endswith("/v1"):
+            return self.base_url[:-3]
+        return self.base_url
+
+    def _management_request(self, method: str, path: str,
+                            payload: dict[str, Any] | None = None,
+                            timeout_seconds: int = 120) -> dict[str, Any]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        data = json.dumps(payload).encode() if payload is not None else None
+        request = urllib.request.Request(
+            self.management_base_url + path, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:1000]
+            kind = "model_error" if exc.code in {400, 404, 422} else "infrastructure"
+            if re.search(r"context.{0,20}(length|window|limit)|maximum context|too many tokens",
+                         detail, re.IGNORECASE):
+                kind = "context_error"
+            raise ProviderError(
+                f"LM Studio model-management API returned HTTP {exc.code}: {detail}", kind) from exc
+        except urllib.error.URLError as exc:
+            kind = "timeout" if isinstance(exc.reason, TimeoutError) else "infrastructure"
+            raise ProviderError(f"LM Studio model-management request failed: {exc.reason}", kind) from exc
+        except (TimeoutError, json.JSONDecodeError) as exc:
+            kind = "timeout" if isinstance(exc, TimeoutError) else "model_error"
+            raise ProviderError(f"LM Studio model-management response failed: {exc}", kind) from exc
+        if not isinstance(result, dict):
+            raise ProviderError("LM Studio model-management API returned a non-object response",
+                                "model_error")
+        return result
+
+    def ensure_model_loaded(self, context_length: int,
+                            timeout_seconds: int = 900) -> dict[str, Any]:
+        """Load the configured model at the requested context and verify the result.
+
+        The OpenAI-compatible chat-completions endpoint has no context-length
+        parameter. LM Studio's native API must load the model with this setting.
+        """
+        if isinstance(context_length, bool) or not isinstance(context_length, int) or context_length < 1:
+            raise ValueError("context_length must be a positive integer")
+
+        inventory = self._management_request("GET", "/api/v1/models", timeout_seconds)
+        models = inventory.get("models")
+        if not isinstance(models, list):
+            raise ProviderError("LM Studio model list did not contain a models array", "model_error")
+
+        selected_model = next((item for item in models
+                               if item.get("key") == self.model
+                               or any(instance.get("id") == self.model
+                                      for instance in item.get("loaded_instances", []))), None)
+        loaded_instances = selected_model.get("loaded_instances", []) if selected_model else []
+
+        for instance in loaded_instances:
+            config = instance.get("config") or {}
+            if config.get("context_length") == context_length:
+                self.model = instance["id"]
+                return {"instance_id": self.model, "context_length": context_length,
+                        "load_time_seconds": None, "reused": True}
+
+        # Existing instances of this exact model may have been loaded by the UI
+        # with a different context. Remove only those instances before reloading.
+        for instance in loaded_instances:
+            instance_id = instance.get("id")
+            if instance_id:
+                self._management_request("POST", "/api/v1/models/unload",
+                                         {"instance_id": instance_id}, timeout_seconds)
+
+        loaded = self._management_request(
+            "POST", "/api/v1/models/load",
+            {"model": selected_model.get("key") if selected_model else self.model,
+             "context_length": context_length,
+             "echo_load_config": True}, timeout_seconds)
+        instance_id = loaded.get("instance_id")
+        loaded_context = (loaded.get("load_config") or {}).get("context_length")
+        if loaded.get("status") != "loaded" or not instance_id:
+            raise ProviderError(f"LM Studio did not confirm model loading: {loaded}", "model_error")
+        if loaded_context != context_length:
+            raise ProviderError(
+                f"LM Studio loaded context_length={loaded_context!r}, "
+                f"but the profile requested {context_length}", "context_error")
+        self.model = instance_id
+        return {"instance_id": instance_id, "context_length": loaded_context,
+                "load_time_seconds": loaded.get("load_time_seconds"), "reused": False}
+
     def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]],
              temperature: float, top_p: float, seed: int | None,
              max_tokens: int, timeout_seconds: int) -> dict[str, Any]:

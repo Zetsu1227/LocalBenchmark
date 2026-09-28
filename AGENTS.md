@@ -22,7 +22,10 @@ reprodutibilidade e a rastreabilidade dos resultados.
 
 - `local_swe_benchmark/cli.py`: CLI `benchmark` e seleção de tarefas/perfis.
 - `agent.py` e `providers/`: loop do agente e integração com o provider. O loop
-  deve permanecer desacoplado do provider concreto.
+  deve permanecer desacoplado do provider concreto. O provider LM Studio carrega
+  e valida o contexto configurado pela API nativa antes de inferir via API
+  OpenAI-compatible; não assuma que `context_length` de perfil é transmitido em
+  `/v1/chat/completions`.
 - `tools.py`: ferramentas determinísticas e delimitadas ao repositório da
   tentativa.
 - `vcs.py` e `runner.py`: checkout isolado, execução, avaliação e coleta de

@@ -5,6 +5,7 @@
 ```text
 CLI/config → task catalog → isolated Git worktree → Agent interface
                                            ├─ LMStudioAgent → OpenAI-compatible API
+                                           │                 └─ native model load API
                                            └─ future adapters (for example Cline)
                          Agent ↔ deterministic tools ↔ repository
                          → post-run evaluator → raw events/results → reports
@@ -15,7 +16,10 @@ the runtime. YAML task files are the extension point; bundled `.yaml` examples
 use JSON syntax (valid YAML) so the core works offline, and optional PyYAML
 enables idiomatic YAML. The provider is separate from the agent loop;
 the agent is separate from tools and repository lifecycle; evaluation runs
-after the agent has stopped. Tool schemas and the system prompt are versioned
+after the agent has stopped. Before inference, the LM Studio provider uses the
+native model-management API to load (or reuse) the profile's model at its
+configured context length, then sends inference requests through the
+OpenAI-compatible chat-completions API. Tool schemas and the system prompt are versioned
 and hashed. A future adapter can implement the same `Agent` contract without
 changing task/evaluation code.
 
@@ -92,7 +96,7 @@ top-level groups are:
   "started_at": "RFC3339 UTC",
   "duration_seconds": 0.0,
   "task": {"id": "...", "version": 1, "category": "creation", "base_commit": "..."},
-  "model": {"profile": "...", "reported_name": "...", "revision": null, "quantization": null, "backend": null, "lmstudio_version": null},
+  "model": {"profile": "...", "reported_name": "...", "revision": null, "quantization": null, "backend": null, "lmstudio_version": null, "lmstudio_instance_id": null, "loaded_context": null, "model_load_seconds": null},
   "controls": {"temperature": 0.2, "top_p": 1.0, "seed": null, "configured_context": 32768, "max_tokens": 32768, "system_prompt_sha256": "...", "tool_schema_sha256": "..."},
   "llm": {"requests": 0, "prompt_tokens": null, "completion_tokens": null, "total_tokens": null, "peak_context": null, "average_context": null, "final_context": null, "context_by_iteration": [], "ttft_seconds": null, "generation_seconds": null, "tokens_per_second": null, "telemetry_source": "provider_usage_and_client_timing"},
   "agent": {"iterations": 0, "tool_calls": 0, "successful_tool_calls": 0, "failed_tool_calls": 0, "commands_executed": 0, "files_read": 0, "files_modified": 0, "lines_added": 0, "lines_removed": 0, "self_corrected": false},
@@ -118,18 +122,23 @@ repository's ownership) from evaluator results; stages not reached remain
 
 1. Resolve a task and model profile; freeze all control settings and compute an
    experiment ID from canonical configuration plus task/version.
-2. For each independent trial, generate a run ID and create a detached Git
+2. Request the LM Studio model load with the profile's `context_length`; record
+   and verify the effective load configuration. Reuse an exact-context loaded
+   instance; unload and reload only instances of the selected model whose
+   context differs. The OpenAI-compatible chat-completions request does not set
+   model context length.
+3. For each independent trial, generate a run ID and create a detached Git
    worktree at the pinned commit. Fail closed if the commit is unavailable or
    the worktree is dirty/unexpected.
-3. Give the model the fixed system prompt, task description, and identical
+4. Give the model the fixed system prompt, task description, and identical
    tool schemas. Log every request and tool call. Enforce iteration, call,
    token, wall-clock, and per-command time limits.
-4. Stop the agent, capture status/diff, and only then stage hidden tests and
+5. Stop the agent, capture status/diff, and only then stage hidden tests and
    run the evaluator. Save stdout, stderr, exit codes, and test results.
-5. Preserve artifacts and remove only the isolated worktree. Never reuse a
+6. Preserve artifacts and remove only the isolated worktree. Never reuse a
    prior run's directory. Do not run two models concurrently against one LM
    Studio server unless concurrency is explicitly the experimental variable.
-6. Aggregate raw runs with success rate and descriptive distributions. Keep
+7. Aggregate raw runs with success rate and descriptive distributions. Keep
    invalid infrastructure/evaluation runs identifiable and separate.
 
 When a profile has a seed, it is the starting seed; trial `n` uses

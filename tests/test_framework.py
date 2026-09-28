@@ -176,7 +176,9 @@ def calculate_total(items: list[dict[str, int | float]]) -> float:
             "run_id": "run-123", "status": "success", "success": True,
             "duration_seconds": 12.5,
             "task": {"id": "creation-coupon-001", "category": "creation"},
-            "model": {"profile": "qwen3.5-9b-q6"},
+            "model": {"profile": "qwen3.5-9b-q6", "loaded_context": 50000,
+                      "model_load_seconds": 2.5},
+            "controls": {"configured_context": 50000},
             "llm": {"prompt_tokens": 100, "completion_tokens": 30,
                     "total_tokens": 130, "peak_context": 100, "tokens_per_second": 20},
             "agent": {"iterations": 2, "tool_calls": 3, "successful_tool_calls": 3,
@@ -205,6 +207,11 @@ def calculate_total(items: list[dict[str, int | float]]) -> float:
             report = paths["html"].read_text(encoding="utf-8")
             self.assertIn("Build and test evaluation", report)
             self.assertIn("2 passed / 0 failed / 2 total", report)
+            self.assertIn("Configured context", report)
+            self.assertIn("Loaded context", report)
+            self.assertIn("50000", report)
+            csv_path = write_report([record], root / "context.csv", "csv")
+            self.assertIn("configured_context,loaded_context,model_load_seconds", csv_path.read_text())
 
     def test_test_result_parser_handles_unittest_pytest_and_unknown_outputs(self):
         self.assertEqual(_parse_test_counts("Ran 4 tests in 0.2s\n\nOK"),
@@ -244,6 +251,74 @@ def calculate_total(items: list[dict[str, int | float]]) -> float:
         self.assertEqual(result["finish_reason"], "tool_calls")
         self.assertEqual(result["tool_calls"][0]["function"]["name"], "read_file")
         self.assertEqual(json.loads(result["tool_calls"][0]["function"]["arguments"]), {"path": "a.py"})
+
+    def test_lmstudio_loads_profile_context_before_inference(self):
+        class JsonResponse:
+            def __init__(self, value):
+                self.value = value
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(self.value).encode()
+
+        responses = [
+            JsonResponse({"models": [{"key": "test-model", "loaded_instances": []}]}),
+            JsonResponse({"status": "loaded", "instance_id": "test-model-instance",
+                          "load_time_seconds": 2.5,
+                          "load_config": {"context_length": 50000}}),
+        ]
+        provider = LMStudioProvider("http://localhost:1234/v1", "test-model")
+        with patch("local_swe_benchmark.providers.lmstudio.urllib.request.urlopen",
+                   side_effect=responses) as urlopen:
+            loaded = provider.ensure_model_loaded(50000)
+
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertEqual(urlopen.call_args_list[0].args[0].full_url,
+                         "http://localhost:1234/api/v1/models")
+        load_request = urlopen.call_args_list[1].args[0]
+        self.assertEqual(load_request.full_url, "http://localhost:1234/api/v1/models/load")
+        self.assertEqual(json.loads(load_request.data), {
+            "model": "test-model", "context_length": 50000, "echo_load_config": True})
+        self.assertEqual(loaded["context_length"], 50000)
+        self.assertEqual(provider.model, "test-model-instance")
+
+    def test_lmstudio_reloads_model_when_existing_context_differs(self):
+        class JsonResponse:
+            def __init__(self, value):
+                self.value = value
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(self.value).encode()
+
+        responses = [
+            JsonResponse({"models": [{"key": "test-model", "loaded_instances": [
+                {"id": "test-model-old", "config": {"context_length": 32768}}]}]}),
+            JsonResponse({"instance_id": "test-model-old"}),
+            JsonResponse({"status": "loaded", "instance_id": "test-model-new",
+                          "load_time_seconds": 1.0,
+                          "load_config": {"context_length": 50000}}),
+        ]
+        provider = LMStudioProvider("http://localhost:1234/v1", "test-model")
+        with patch("local_swe_benchmark.providers.lmstudio.urllib.request.urlopen",
+                   side_effect=responses) as urlopen:
+            loaded = provider.ensure_model_loaded(50000)
+
+        unload_request = urlopen.call_args_list[1].args[0]
+        self.assertEqual(unload_request.full_url, "http://localhost:1234/api/v1/models/unload")
+        self.assertEqual(json.loads(unload_request.data), {"instance_id": "test-model-old"})
+        self.assertEqual(loaded["instance_id"], "test-model-new")
+        self.assertEqual(loaded["context_length"], 50000)
 
 
 if __name__ == "__main__":

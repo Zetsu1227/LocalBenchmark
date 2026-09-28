@@ -63,7 +63,9 @@ def run_trial(task: Task, profile_name: str, profile: dict[str, Any], results_ro
         "model": {"profile": profile_name, "provider": profile.get("provider", "lmstudio"),
                   "reported_name": profile.get("model"),
                   "revision": profile.get("revision"), "quantization": profile.get("quantization"),
-                  "backend": profile.get("backend"), "lmstudio_version": profile.get("lmstudio_version")},
+                  "backend": profile.get("backend"), "lmstudio_version": profile.get("lmstudio_version"),
+                  "lmstudio_instance_id": None, "loaded_context": None,
+                  "model_load_seconds": None},
         "controls": {"temperature": float(profile.get("temperature", 0.2)),
                      "top_p": float(profile.get("top_p", 1.0)), "seed": profile.get("seed"),
                      "configured_context": profile.get("context_length"),
@@ -140,6 +142,16 @@ def run_trial(task: Task, profile_name: str, profile: dict[str, Any], results_ro
         p = profile
         provider = provider_override or LMStudioProvider(p.get("base_url", "http://localhost:1234/v1"),
                                                         str(p["model"]), p.get("api_key"))
+        if provider_override is None and p.get("context_length") is not None:
+            phase = "model_load"
+            loaded_model = provider.ensure_model_loaded(p["context_length"], task.timeout_seconds)
+            record["model"].update({
+                "lmstudio_instance_id": loaded_model["instance_id"],
+                "loaded_context": loaded_model["context_length"],
+                "model_load_seconds": loaded_model["load_time_seconds"],
+            })
+            event({"type": "model_ready", **loaded_model,
+                   "configured_context": p["context_length"]})
         toolbox = ToolBox(worktree, task.allowed_commands, task.public_command,
                           task.timeout_seconds, event)
         agent = Agent(provider, toolbox, event, float(p.get("temperature", 0.2)),

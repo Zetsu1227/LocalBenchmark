@@ -154,7 +154,8 @@ def write_report(records: list[dict[str, Any]], destination: Path, format_name: 
         destination.write_text(json.dumps({"summary": summarize(records), "runs": records}, indent=2,
                                           ensure_ascii=False) + "\n", encoding="utf-8")
     elif format_name == "csv":
-        fields = ["run_id", "experiment_id", "task_id", "category", "model", "status", "success",
+        fields = ["run_id", "experiment_id", "task_id", "category", "model", "configured_context",
+                  "loaded_context", "model_load_seconds", "status", "success",
                   "duration_seconds", "prompt_tokens", "completion_tokens", "total_tokens", "peak_context",
                   "average_context", "iterations", "tool_calls", "successful_tool_calls", "failed_tool_calls",
                   "files_changed", "lines_added", "lines_removed", "public_tests_passed", "public_tests_failed",
@@ -166,7 +167,11 @@ def write_report(records: list[dict[str, Any]], destination: Path, format_name: 
             for r in records:
                 writer.writerow({"run_id": r.get("run_id"), "experiment_id": r.get("experiment_id"),
                                  "task_id": (r.get("task") or {}).get("id"), "category": (r.get("task") or {}).get("category"),
-                                 "model": (r.get("model") or {}).get("profile"), "status": r.get("status"),
+                                 "model": (r.get("model") or {}).get("profile"),
+                                 "configured_context": (r.get("controls") or {}).get("configured_context"),
+                                 "loaded_context": (r.get("model") or {}).get("loaded_context"),
+                                 "model_load_seconds": (r.get("model") or {}).get("model_load_seconds"),
+                                 "status": r.get("status"),
                                  "success": r.get("success"), "duration_seconds": r.get("duration_seconds"),
                                  "prompt_tokens": (r.get("llm") or {}).get("prompt_tokens"),
                                  "completion_tokens": (r.get("llm") or {}).get("completion_tokens"),
@@ -192,7 +197,11 @@ def write_report(records: list[dict[str, Any]], destination: Path, format_name: 
     elif format_name == "html":
         rows = "".join("<tr>" + "".join(f"<td>{html.escape(str(v if v is not None else ''))}</td>" for v in (
             r.get("run_id"), (r.get("task") or {}).get("id"), (r.get("model") or {}).get("profile"),
-            r.get("status"), r.get("success"), r.get("duration_seconds"), (r.get("llm") or {}).get("peak_context"))) + "</tr>" for r in records)
+            r.get("status"), r.get("success"), r.get("duration_seconds"),
+            (r.get("controls") or {}).get("configured_context"),
+            (r.get("model") or {}).get("loaded_context"),
+            (r.get("model") or {}).get("model_load_seconds"),
+            (r.get("llm") or {}).get("peak_context"))) + "</tr>" for r in records)
         s = summarize(records)
         category_rows = _html_summary_rows(s["by_category"])
         model_rows = _html_summary_rows(s["by_model"])
@@ -212,7 +221,7 @@ def write_report(records: list[dict[str, Any]], destination: Path, format_name: 
 <h2>Per task</h2><table><tr><th>Task</th><th>Runs</th><th>Successes</th><th>Success rate</th><th>Wilson 95% interval</th><th>Median time</th><th>Median tokens</th><th>Median iterations</th></tr>{task_rows}</table>
 <h2>Failure analysis</h2><table><tr><th>Failure class</th><th>Count</th></tr>{failure_rows}</table>
 <h2>Context tokens by agent iteration</h2>{context_chart}
-<h2>Individual runs</h2><table><tr><th>Run</th><th>Task</th><th>Model</th><th>Status</th><th>Success</th><th>Seconds</th><th>Peak context</th></tr>{rows}</table>
+<h2>Individual runs</h2><table><tr><th>Run</th><th>Task</th><th>Model</th><th>Status</th><th>Success</th><th>Seconds</th><th>Configured context</th><th>Loaded context</th><th>Load seconds</th><th>Peak observed context</th></tr>{rows}</table>
 <h2>Build and test evaluation</h2><table><tr><th>Run</th><th>Stage</th><th>Result</th><th>Cases</th><th>Exit code</th><th>Command and output</th></tr>{evaluation_rows}</table></body></html>"""
         destination.write_text(document, encoding="utf-8")
     else:
